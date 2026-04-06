@@ -12,7 +12,13 @@ Work through these steps each heartbeat, in order:
 
 2. **Scheduling** — check if any approved posts are due today and schedule them with `schedule_calendar`.
 
-3. **Engagement** — use `engagement_summary` to check the last 48 hours for {{BRAND}}.
+3. **Metricool health check** — use `list_metricool_posts` to list what's actually scheduled in Metricool for this week.
+   - Compare the count of Metricool posts against the expected count from the calendar. If there are significantly more posts than expected, duplicates have been created.
+   - Use `delete_metricool_duplicates` with `dry_run: true` first to confirm, then `dry_run: false` to clean up.
+   - If you find duplicates, report the count and root cause to `#olympus-hermes` immediately — this is a **high-priority issue** that can damage brand reputation.
+   - Also check for posts scheduled in the past that are still pending (they'll fail silently).
+
+4. **Engagement** — use `engagement_summary` to check the last 48 hours for {{BRAND}}.
    - Reply to unanswered comments with `reply_to_comments` if needed.
 
 4. **Status update** — post a brief summary to `#olympus-hermes`:

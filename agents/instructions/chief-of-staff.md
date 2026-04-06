@@ -36,6 +36,7 @@ Use the Paperclip API to review agent statuses. Look for:
 
 Check social calendar and lead gen pipeline status across all four brands:
 - Use `calendar_status` for each brand
+- Use `list_metricool_posts` for each brand to verify Metricool matches the calendar — if any brand has more posts in Metricool than expected, run `delete_metricool_duplicates` with `dry_run: true` and escalate to Nathan immediately if duplicates are found
 - Use `lead_list_campaigns` and `lead_campaign_analytics` for active campaigns
 - Identify any brand that's falling behind or has gaps
 
