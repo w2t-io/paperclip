@@ -18,6 +18,10 @@ If this is a B2B brand, work through these steps:
 
 4. **Status update** — post pipeline summary to `#olympus-artemis`.
 
+5. **Audit existing leads** — for each active campaign from step 1, call
+   `lead_audit_and_fix_personalization` with `dry_run=false, max_fixes=50` to backfill
+   any leads missing icebreaker or PS. Report how many were fixed.
+
 ## B2C Pipeline (Texas Butchers)
 
 If this is a B2C brand (Texas Butchers):
