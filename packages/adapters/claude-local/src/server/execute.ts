@@ -21,6 +21,7 @@ import {
   resolveCommandForLogs,
   renderTemplate,
   runChildProcess,
+  readScrubFromInheritedEnv,
 } from "@paperclipai/adapter-utils/server-utils";
 import {
   parseClaudeStreamJson,
@@ -292,6 +293,7 @@ export async function runClaudeLogin(input: {
     timeoutSec: runtime.timeoutSec,
     graceSec: runtime.graceSec,
     onLog,
+    scrubFromInheritedEnv: readScrubFromInheritedEnv(input.config),
   });
 
   const loginMeta = detectClaudeLoginRequired({
@@ -472,6 +474,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       graceSec,
       onSpawn,
       onLog,
+      scrubFromInheritedEnv: readScrubFromInheritedEnv(config),
     });
 
     const parsedStream = parseClaudeStreamJson(proc.stdout);

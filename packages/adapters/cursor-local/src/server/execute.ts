@@ -21,6 +21,7 @@ import {
   renderTemplate,
   joinPromptSections,
   runChildProcess,
+  readScrubFromInheritedEnv,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "../index.js";
 import { parseCursorJsonl, isCursorUnknownSessionError } from "./parse.js";
@@ -439,6 +440,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         }
         await flushStdoutChunk(chunk);
       },
+      scrubFromInheritedEnv: readScrubFromInheritedEnv(config),
     });
     await flushStdoutChunk("", true);
 

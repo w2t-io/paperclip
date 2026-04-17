@@ -12,11 +12,17 @@ export const envBindingSecretRefSchema = z.object({
   version: z.union([z.literal("latest"), z.number().int().positive()]).optional(),
 });
 
+export const envBindingEnvRefSchema = z.object({
+  type: z.literal("env_ref"),
+  envVar: z.string().min(1),
+});
+
 // Backward-compatible union that accepts legacy inline values.
 export const envBindingSchema = z.union([
   z.string(),
   envBindingPlainSchema,
   envBindingSecretRefSchema,
+  envBindingEnvRefSchema,
 ]);
 
 export const envConfigSchema = z.record(envBindingSchema);

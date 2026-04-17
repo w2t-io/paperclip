@@ -23,6 +23,7 @@ import {
   parseObject,
   renderTemplate,
   runChildProcess,
+  readScrubFromInheritedEnv,
 } from "@paperclipai/adapter-utils/server-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
 import {
@@ -360,6 +361,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       graceSec,
       onSpawn,
       onLog,
+      scrubFromInheritedEnv: readScrubFromInheritedEnv(config),
     });
     return {
       proc,

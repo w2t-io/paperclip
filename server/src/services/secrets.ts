@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { companySecrets, companySecretVersions } from "@paperclipai/db";
+import { agents, companySecrets, companySecretVersions } from "@paperclipai/db";
 import type { AgentEnvConfig, EnvBinding, SecretProvider } from "@paperclipai/shared";
 import { envBindingSchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -13,7 +13,8 @@ const REDACTED_SENTINEL = "***REDACTED***";
 
 type CanonicalEnvBinding =
   | { type: "plain"; value: string }
-  | { type: "secret_ref"; secretId: string; version: number | "latest" };
+  | { type: "secret_ref"; secretId: string; version: number | "latest" }
+  | { type: "env_ref"; envVar: string };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
@@ -31,11 +32,40 @@ function canonicalizeBinding(binding: EnvBinding): CanonicalEnvBinding {
   if (binding.type === "plain") {
     return { type: "plain", value: String(binding.value) };
   }
+  if (binding.type === "env_ref") {
+    return { type: "env_ref", envVar: binding.envVar };
+  }
   return {
     type: "secret_ref",
     secretId: binding.secretId,
     version: binding.version ?? "latest",
   };
+}
+
+/**
+ * Scan a raw adapter env record for env_ref bindings and return the set of
+ * process.env variable names they reference. Used to compute system-wide
+ * "managed" env vars for scrub logic.
+ */
+function collectEnvRefVarNamesFromEnvRecord(envValue: unknown, out: Set<string>) {
+  const record = asRecord(envValue);
+  if (!record) return;
+  for (const rawBinding of Object.values(record)) {
+    // Avoid zod parsing here (hot path — called for every agent row). Do a
+    // structural check and ignore anything malformed; proper validation
+    // happens on persistence.
+    if (
+      typeof rawBinding === "object" &&
+      rawBinding !== null &&
+      !Array.isArray(rawBinding) &&
+      (rawBinding as { type?: unknown }).type === "env_ref"
+    ) {
+      const envVar = (rawBinding as { envVar?: unknown }).envVar;
+      if (typeof envVar === "string" && envVar.length > 0) {
+        out.add(envVar);
+      }
+    }
+  }
 }
 
 export function secretService(db: Db) {
@@ -121,6 +151,11 @@ export function secretService(db: Db) {
           throw unprocessable(`Refusing to persist redacted placeholder for key: ${key}`);
         }
         normalized[key] = binding;
+        continue;
+      }
+
+      if (binding.type === "env_ref") {
+        normalized[key] = { type: "env_ref", envVar: binding.envVar };
         continue;
       }
 
@@ -309,11 +344,28 @@ export function secretService(db: Db) {
       return normalized;
     },
 
-    resolveEnvBindings: async (companyId: string, envValue: unknown): Promise<{ env: Record<string, string>; secretKeys: Set<string> }> => {
+    resolveEnvBindings: async (
+      companyId: string,
+      envValue: unknown,
+    ): Promise<{
+      env: Record<string, string>;
+      secretKeys: Set<string>;
+      envRefKeys: Set<string>;
+      envRefVarNames: Set<string>;
+    }> => {
       const record = asRecord(envValue);
-      if (!record) return { env: {} as Record<string, string>, secretKeys: new Set<string>() };
+      if (!record) {
+        return {
+          env: {} as Record<string, string>,
+          secretKeys: new Set<string>(),
+          envRefKeys: new Set<string>(),
+          envRefVarNames: new Set<string>(),
+        };
+      }
       const resolved: Record<string, string> = {};
       const secretKeys = new Set<string>();
+      const envRefKeys = new Set<string>();
+      const envRefVarNames = new Set<string>();
 
       for (const [key, rawBinding] of Object.entries(record)) {
         if (!ENV_KEY_RE.test(key)) {
@@ -326,24 +378,43 @@ export function secretService(db: Db) {
         const binding = canonicalizeBinding(parsed.data as EnvBinding);
         if (binding.type === "plain") {
           resolved[key] = binding.value;
+        } else if (binding.type === "env_ref") {
+          envRefKeys.add(key);
+          envRefVarNames.add(binding.envVar);
+          const fromProcess = process.env[binding.envVar];
+          // Omit the key entirely if the source var is missing or empty —
+          // setting FOO="" ≠ unset and has caused 401 bugs in production.
+          if (typeof fromProcess === "string" && fromProcess.length > 0) {
+            resolved[key] = fromProcess;
+          }
         } else {
           resolved[key] = await resolveSecretValue(companyId, binding.secretId, binding.version);
           secretKeys.add(key);
         }
       }
-      return { env: resolved, secretKeys };
+      return { env: resolved, secretKeys, envRefKeys, envRefVarNames };
     },
 
-    resolveAdapterConfigForRuntime: async (companyId: string, adapterConfig: Record<string, unknown>): Promise<{ config: Record<string, unknown>; secretKeys: Set<string> }> => {
+    resolveAdapterConfigForRuntime: async (
+      companyId: string,
+      adapterConfig: Record<string, unknown>,
+    ): Promise<{
+      config: Record<string, unknown>;
+      secretKeys: Set<string>;
+      envRefKeys: Set<string>;
+      envRefVarNames: Set<string>;
+    }> => {
       const resolved = { ...adapterConfig };
       const secretKeys = new Set<string>();
+      const envRefKeys = new Set<string>();
+      const envRefVarNames = new Set<string>();
       if (!Object.prototype.hasOwnProperty.call(adapterConfig, "env")) {
-        return { config: resolved, secretKeys };
+        return { config: resolved, secretKeys, envRefKeys, envRefVarNames };
       }
       const record = asRecord(adapterConfig.env);
       if (!record) {
         resolved.env = {};
-        return { config: resolved, secretKeys };
+        return { config: resolved, secretKeys, envRefKeys, envRefVarNames };
       }
       const env: Record<string, string> = {};
       for (const [key, rawBinding] of Object.entries(record)) {
@@ -357,13 +428,42 @@ export function secretService(db: Db) {
         const binding = canonicalizeBinding(parsed.data as EnvBinding);
         if (binding.type === "plain") {
           env[key] = binding.value;
+        } else if (binding.type === "env_ref") {
+          envRefKeys.add(key);
+          envRefVarNames.add(binding.envVar);
+          const fromProcess = process.env[binding.envVar];
+          if (typeof fromProcess === "string" && fromProcess.length > 0) {
+            env[key] = fromProcess;
+          }
         } else {
           env[key] = await resolveSecretValue(companyId, binding.secretId, binding.version);
           secretKeys.add(key);
         }
       }
       resolved.env = env;
-      return { config: resolved, secretKeys };
+      return { config: resolved, secretKeys, envRefKeys, envRefVarNames };
+    },
+
+    /**
+     * Return the union of `envVar` names referenced by `env_ref` bindings
+     * across all agents in a company. Used to determine which process.env
+     * vars are "managed" system-wide and should be scrubbed from subprocess
+     * env inheritance for agents that don't explicitly bind them.
+     *
+     * One DB round-trip; parse in JS.
+     */
+    getSystemEnvRefVarNames: async (companyId: string): Promise<Set<string>> => {
+      const rows = await db
+        .select({ adapterConfig: agents.adapterConfig })
+        .from(agents)
+        .where(eq(agents.companyId, companyId));
+      const names = new Set<string>();
+      for (const row of rows) {
+        const cfg = row.adapterConfig as Record<string, unknown> | null | undefined;
+        if (!cfg) continue;
+        collectEnvRefVarNamesFromEnvRecord(cfg.env, names);
+      }
+      return names;
     },
   };
 }

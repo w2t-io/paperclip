@@ -20,6 +20,7 @@ import {
   renderTemplate,
   joinPromptSections,
   runChildProcess,
+  readScrubFromInheritedEnv,
 } from "@paperclipai/adapter-utils/server-utils";
 import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
 import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir } from "./codex-home.js";
@@ -527,6 +528,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         if (!cleaned.trim()) return;
         await onLog(stream, cleaned);
       },
+      scrubFromInheritedEnv: readScrubFromInheritedEnv(config),
     });
     const cleanedStderr = stripCodexRolloutNoise(proc.stderr);
     return {

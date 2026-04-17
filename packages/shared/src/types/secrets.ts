@@ -17,8 +17,13 @@ export interface EnvSecretRefBinding {
   version?: SecretVersionSelector;
 }
 
+export interface EnvEnvRefBinding {
+  type: "env_ref";
+  envVar: string;
+}
+
 // Backward-compatible: legacy plaintext string values are still accepted.
-export type EnvBinding = string | EnvPlainBinding | EnvSecretRefBinding;
+export type EnvBinding = string | EnvPlainBinding | EnvSecretRefBinding | EnvEnvRefBinding;
 
 export type AgentEnvConfig = Record<string, EnvBinding>;
 
