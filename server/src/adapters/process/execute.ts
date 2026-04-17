@@ -10,6 +10,7 @@ import {
   resolveCommandForLogs,
   runChildProcess,
 } from "../utils.js";
+import { readScrubFromInheritedEnv } from "@paperclipai/adapter-utils/server-utils";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, config, onLog, onMeta } = ctx;
@@ -50,6 +51,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     timeoutSec,
     graceSec,
     onLog,
+    scrubFromInheritedEnv: readScrubFromInheritedEnv(config),
   });
 
   if (proc.timedOut) {

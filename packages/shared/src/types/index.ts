@@ -111,6 +111,7 @@ export type {
   SecretVersionSelector,
   EnvPlainBinding,
   EnvSecretRefBinding,
+  EnvEnvRefBinding,
   EnvBinding,
   AgentEnvConfig,
   CompanySecret,

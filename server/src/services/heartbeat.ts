@@ -2288,14 +2288,24 @@ export function heartbeatService(db: Db) {
       : persistedWorkspaceManagedConfig;
     const configSnapshot = buildExecutionWorkspaceConfigSnapshot(mergedConfig);
     const executionRunConfig = stripWorkspaceRuntimeFromExecutionRunConfig(mergedConfig);
-    const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
-      agent.companyId,
-      executionRunConfig,
+    const { config: resolvedConfig, secretKeys, envRefKeys, envRefVarNames } =
+      await secretsSvc.resolveAdapterConfigForRuntime(agent.companyId, executionRunConfig);
+    // Scrub list: any env var referenced by any agent's env_ref binding in
+    // this company, minus the ones this agent itself binds via env_ref.
+    // This makes env_ref "CEO-only" — other agents won't inherit the raw
+    // process.env values for managed vars.
+    const systemEnvRefVarNames = await secretsSvc.getSystemEnvRefVarNames(agent.companyId);
+    const scrubFromInheritedEnv = [...systemEnvRefVarNames].filter(
+      (name) => !envRefVarNames.has(name),
     );
+    // env_ref resolved values are runtime-sensitive — mirror secretKeys
+    // treatment for adapter.invoke redaction.
+    for (const key of envRefKeys) secretKeys.add(key);
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId);
     const runtimeConfig = {
       ...resolvedConfig,
       paperclipRuntimeSkills: runtimeSkillEntries,
+      paperclipScrubFromInheritedEnv: scrubFromInheritedEnv,
     };
     const workspaceOperationRecorder = workspaceOperationsSvc.createRecorder({
       companyId: agent.companyId,

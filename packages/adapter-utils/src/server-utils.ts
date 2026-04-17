@@ -144,6 +144,17 @@ export function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+/**
+ * Read the `paperclipScrubFromInheritedEnv` list off a resolved adapter
+ * config. Heartbeat populates this with the set of env var names that are
+ * referenced by `env_ref` bindings elsewhere in the company but NOT by the
+ * current agent — those must be stripped from the inherited process.env when
+ * spawning this agent's subprocess. Returns [] for legacy configs.
+ */
+export function readScrubFromInheritedEnv(config: Record<string, unknown>): string[] {
+  return asStringArray(config.paperclipScrubFromInheritedEnv);
+}
+
 export function parseJson(value: string): Record<string, unknown> | null {
   try {
     return JSON.parse(value) as Record<string, unknown>;
@@ -759,12 +770,26 @@ export async function runChildProcess(
     onLogError?: (err: unknown, runId: string, message: string) => void;
     onSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
     stdin?: string;
+    /**
+     * Env var names to strip from the inherited `process.env` before merging
+     * `opts.env`. Used to enforce per-agent env_ref scoping: system-wide
+     * managed env vars get scrubbed from inheritance so only agents that
+     * explicitly bind them see the values. Keys present in `opts.env` still
+     * land in the merged env — scrubbing only affects inheritance.
+     */
+    scrubFromInheritedEnv?: string[];
   },
 ): Promise<RunProcessResult> {
   const onLogError = opts.onLogError ?? ((err, id, msg) => console.warn({ err, runId: id }, msg));
 
   return new Promise<RunProcessResult>((resolve, reject) => {
-    const rawMerged: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
+    const inherited: NodeJS.ProcessEnv = { ...process.env };
+    if (opts.scrubFromInheritedEnv && opts.scrubFromInheritedEnv.length > 0) {
+      for (const name of opts.scrubFromInheritedEnv) {
+        delete inherited[name];
+      }
+    }
+    const rawMerged: NodeJS.ProcessEnv = { ...inherited, ...opts.env };
 
     // Strip Claude Code nesting-guard env vars so spawned `claude` processes
     // don't refuse to start with "cannot be launched inside another session".
