@@ -67,4 +67,15 @@ curl -s -X POST "http://127.0.0.1:3100/api/agents/{AGENT_ID}/heartbeat/invoke" \
 
 ## Posting Rule
 
-**Only post if something is wrong.** Healthy + no stuck/failed agents = silence.
+**Only post if something is wrong AND the state has changed since the last alert.**
+
+Default: silence. Post only when:
+1. **A new failure** appears (something broke that was healthy on the previous heartbeat), OR
+2. **A recovery** happens (something that was broken is now healthy), OR
+3. **An escalation** is warranted (a failure has persisted for >6 hours and you have not posted about it in the last 6 hours).
+
+**Suppression rule**: before posting, check the most recent 10 messages in `#olympus-cerberus` (use `slack_get_channel_history`). If the same failure (same MCP server name, same failure mode, same restart attempt) was already reported in the last 6 hours and the state has not changed, **DO NOT post again**. Persistent failures get re-noticed every 6 hours, not every 15 minutes.
+
+**Healthy heartbeat**: silence. Do not post "all green" or "still healthy" updates. Ever.
+
+**One consolidated message per heartbeat, max.** If multiple things broke at once, group them into a single post with sections — don't fire 3 separate messages.
